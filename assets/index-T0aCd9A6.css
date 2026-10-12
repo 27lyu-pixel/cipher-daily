@@ -1,0 +1,1 @@
+:root{--bg: #ffffff;--fg: #1a1a1a;--muted: #5c5c5c;color-scheme:light dark}@media(prefers-color-scheme:dark){:root{--bg: #121212;--fg: #ececec;--muted: #a8a8a8}}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}main{max-width:40rem;margin:0 auto;padding:1rem}.muted{color:var(--muted)}
