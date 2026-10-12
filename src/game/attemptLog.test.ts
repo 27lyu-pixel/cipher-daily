@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ATTEMPTS_KEY, AttemptLog, type Attempt } from './attemptLog';
+import { ATTEMPTS_KEY, AttemptLog, type Attempt, type TutorialCompletion } from './attemptLog';
 import { memoryStorage } from './storage';
 
 let n = 0;
@@ -71,8 +71,59 @@ describe('AttemptLog', () => {
     const storage = memoryStorage();
     const log = new AttemptLog(storage);
     log.add(attempt());
+    log.addTutorialCompletion(tutorial());
     log.clear();
     expect(log.list()).toEqual([]);
+    expect(log.tutorialCompletions()).toEqual([]);
     expect(storage.getItem(ATTEMPTS_KEY)).toBeNull();
+  });
+});
+
+function tutorial(overrides: Partial<TutorialCompletion> = {}): TutorialCompletion {
+  n += 1;
+  return {
+    v: 1,
+    id: `t${n}`,
+    cipher: 'porta',
+    completedAt: n,
+    durationMs: 240_000,
+    guidedPuzzleSolved: true,
+    hintsUsed: 1,
+    ...overrides,
+  };
+}
+
+describe('AttemptLog tutorial completions', () => {
+  it('records, filters and persists completions', () => {
+    const storage = memoryStorage();
+    const log = new AttemptLog(storage);
+    expect(log.hasCompletedTutorial('porta')).toBe(false);
+    log.addTutorialCompletion(tutorial());
+    log.addTutorialCompletion(tutorial({ cipher: 'hill', guidedPuzzleSolved: false }));
+    expect(log.hasCompletedTutorial('porta')).toBe(true);
+    expect(log.tutorialCompletions('hill')).toHaveLength(1);
+    expect(new AttemptLog(storage).tutorialCompletions()).toHaveLength(2);
+  });
+
+  it('is never capped by the per-cipher attempt limit', () => {
+    const log = new AttemptLog(memoryStorage(), 1);
+    for (let i = 0; i < 5; i++) log.addTutorialCompletion(tutorial());
+    expect(log.tutorialCompletions('porta')).toHaveLength(5);
+  });
+
+  it('rejects malformed completions', () => {
+    const log = new AttemptLog(memoryStorage());
+    expect(() => log.addTutorialCompletion({ ...tutorial(), hintsUsed: 'two' } as unknown as TutorialCompletion)).toThrow(
+      TypeError,
+    );
+  });
+
+  it('loads logs saved before tutorials were tracked', () => {
+    const storage = memoryStorage();
+    storage.setItem(ATTEMPTS_KEY, JSON.stringify({ v: 1, attempts: [], aggregates: {} }));
+    const log = new AttemptLog(storage);
+    expect(log.tutorialCompletions()).toEqual([]);
+    log.addTutorialCompletion(tutorial());
+    expect(log.hasCompletedTutorial('porta')).toBe(true);
   });
 });

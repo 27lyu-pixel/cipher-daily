@@ -57,10 +57,24 @@ export interface Aggregate {
   hintsUsed: number;
 }
 
+/** One finished run through a cipher's tutorial. Tutorials are never capped or rolled up. */
+export interface TutorialCompletion {
+  v: 1;
+  id: string;
+  cipher: CipherId;
+  completedAt: number;
+  durationMs: number;
+  /** Whether the guided practice puzzle at the end was solved. */
+  guidedPuzzleSolved: boolean;
+  /** Step-by-step hints unlocked on the guided puzzle. */
+  hintsUsed: number;
+}
+
 interface Persisted {
   v: 1;
   attempts: Attempt[];
   aggregates: Partial<Record<CipherId, Aggregate>>;
+  tutorials: TutorialCompletion[];
 }
 
 export const ATTEMPTS_KEY = 'cd:v1:attempts';
@@ -95,6 +109,22 @@ function isAttempt(x: unknown): x is Attempt {
   );
 }
 
+function isTutorialCompletion(x: unknown): x is TutorialCompletion {
+  if (typeof x !== 'object' || x === null) return false;
+  const t = x as Record<string, unknown>;
+  return (
+    t.v === 1 &&
+    typeof t.id === 'string' &&
+    (CIPHER_IDS as readonly unknown[]).includes(t.cipher) &&
+    typeof t.completedAt === 'number' &&
+    typeof t.durationMs === 'number' &&
+    typeof t.guidedPuzzleSolved === 'boolean' &&
+    typeof t.hintsUsed === 'number'
+  );
+}
+
+const emptyLog = (): Persisted => ({ v: 1, attempts: [], aggregates: {}, tutorials: [] });
+
 export class AttemptLog {
   private data: Persisted;
 
@@ -107,15 +137,20 @@ export class AttemptLog {
 
   private load(): Persisted {
     const raw = this.storage.getItem(ATTEMPTS_KEY);
-    if (raw === null) return { v: 1, attempts: [], aggregates: {} };
+    if (raw === null) return emptyLog();
     try {
       const parsed = JSON.parse(raw) as Partial<Persisted>;
       if (parsed.v !== 1 || !Array.isArray(parsed.attempts)) throw new Error('unknown format');
-      return { v: 1, attempts: parsed.attempts.filter(isAttempt), aggregates: parsed.aggregates ?? {} };
+      return {
+        v: 1,
+        attempts: parsed.attempts.filter(isAttempt),
+        aggregates: parsed.aggregates ?? {},
+        tutorials: Array.isArray(parsed.tutorials) ? parsed.tutorials.filter(isTutorialCompletion) : [],
+      };
     } catch {
       // Keep the unreadable data so nothing is silently destroyed, then start fresh.
       this.storage.setItem(`${ATTEMPTS_KEY}:unreadable`, raw);
-      return { v: 1, attempts: [], aggregates: {} };
+      return emptyLog();
     }
   }
 
@@ -152,8 +187,22 @@ export class AttemptLog {
     return agg;
   }
 
+  addTutorialCompletion(completion: TutorialCompletion): void {
+    if (!isTutorialCompletion(completion)) throw new TypeError('Invalid tutorial completion record');
+    this.data.tutorials.push(completion);
+    this.save();
+  }
+
+  tutorialCompletions(cipher?: CipherId): TutorialCompletion[] {
+    return this.data.tutorials.filter((t) => !cipher || t.cipher === cipher);
+  }
+
+  hasCompletedTutorial(cipher: CipherId): boolean {
+    return this.data.tutorials.some((t) => t.cipher === cipher);
+  }
+
   clear(): void {
-    this.data = { v: 1, attempts: [], aggregates: {} };
+    this.data = emptyLog();
     this.storage.removeItem(ATTEMPTS_KEY);
   }
 }
